@@ -1,0 +1,72 @@
+#!/usr/bin/env lua
+
+local function download(url, target)
+    local cmd = string.format("curl -L %s -o %s", url, target)
+    os.execute(cmd)
+end
+
+local function install(name, version, target_dir)
+    if not os.execute(string.format("test -d %s", target_dir)) then
+        download(string.format("https://github.com/user/%s/archive/v%s.tar.gz", name, version), target_dir .. ".tar.gz")
+        os.execute(string.format("tar -xzf %s.tar.gz", target_dir))
+        os.execute(string.format("mv %s-%s %s", name, version, target_dir))
+        os.execute(string.format("lua %s/install.lua", target_dir))
+    end
+end
+
+local function uninstall(name, version, target_dir)
+    os.execute(string.format("lua %s/uninstall.lua", target_dir))
+    os.execute(string.format("rm -rf %s", target_dir))
+end
+
+local function resolve_dependencies(name, version, dependency_table)
+    local dependencies = dependency_table[name] and dependency_table[name][version] or {}
+    local installed_versions = {}
+
+    for _, dependency in ipairs(dependencies) do
+        local dependency_name = dependency[1]
+        local dependency_version = dependency[2]
+        local target_dir = string.format("%s-%s", dependency_name, dependency_version)
+
+        if not installed_versions[dependency_name] or installed_versions[dependency_name] < dependency_version then
+            install(dependency_name, dependency_version, target_dir)
+            resolve_dependencies(dependency_name, dependency_version, dependency_table)
+            table.insert(installed_versions, dependency_name, target_dir)
+        end
+    end
+
+    return installed_versions
+end
+
+local function main()
+    if #arg < 2 then
+        return
+    end
+
+    local action = arg[1]
+    local name = arg[2]
+    local version = arg[3] or "1.0.0"
+    local target_dir = string.format("%s-%s", name, version)
+
+    if action == "install" then
+        local repo_url = "https://github.com/user/luapkg-packages"
+        local repo_path = "/tmp/luapkg-packages"
+        local package_path = string.format("%s/%s-%s.tar.gz", repo_path, name, version)
+        
+        if not os.execute(string.format("test -d %s", repo_path)) then
+            download(repo_url, repo_path .. ".tar.gz")
+            os.execute(string.format("tar -xzf %s.tar.gz", repo_path))
+        end
+        
+        if os.execute(string.format("test -f %s", package_path)) then
+            install(name, version, target_dir)
+        else
+            io.write(name, " not found.\n")
+        end
+    elseif action == "uninstall" then
+        uninstall(name, version, target_dir)
+    end
+end
+
+main()
+
